@@ -1,0 +1,67 @@
+name: Bug report
+description: Report a parsing or download problem
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。**请不要提交 Cookie、CSRF token 或完整签名 URL。**
+        公开页面的游戏链接可以贴；如果页面需要登录，只说明“需要登录”，不要贴凭据。
+  - type: input
+    id: gopeed-version
+    attributes:
+      label: Gopeed version
+      placeholder: "1.9.3"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Android
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: game-url
+    attributes:
+      label: Public game URL
+      placeholder: "https://author.itch.io/game"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: "Expected the APK and desktop files to be listed..."
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      placeholder: "Only one file is listed / HTTP 403 / request timeout..."
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Redacted extension log
+      description: Remove URLs, cookies, CSRF values, and signed query parameters before pasting.
+      render: text
+    validations:
+      required: false
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I did not include a Cookie, CSRF token, or signed download URL.
+          required: true
+        - label: This report is about public/free content, not a request to bypass login, purchase, or age checks.
+          required: true

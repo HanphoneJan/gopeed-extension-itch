@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-label="itch.io Downloader for Gopeed">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0f1115"/>
+      <stop offset="0.55" stop-color="#171a21"/>
+      <stop offset="1" stop-color="#231318"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#fa5c5c"/>
+      <stop offset="1" stop-color="#ff8a5c"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="300" rx="24" fill="url(#bg)"/>
+  <circle cx="1060" cy="60" r="150" fill="#fa5c5c" opacity="0.08"/>
+  <circle cx="100" cy="270" r="160" fill="#ff8a5c" opacity="0.06"/>
+  <g transform="translate(72 88)">
+    <rect x="0" y="0" width="84" height="84" rx="20" fill="url(#accent)"/>
+    <path d="M42 18v30M28 36l14 14 14-14M24 56v10h36V56" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="112" y="34" fill="#ffffff" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="42" font-weight="700">itch.io Downloader</text>
+    <text x="112" y="72" fill="#b7bdc8" font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="20">A Gopeed extension for public/free itch.io game downloads</text>
+    <g font-family="Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="17">
+      <rect x="112" y="96" width="150" height="32" rx="16" fill="#ffffff" opacity="0.07"/>
+      <text x="132" y="118" fill="#e8ebf0">APK · Windows</text>
+      <rect x="272" y="96" width="150" height="32" rx="16" fill="#ffffff" opacity="0.07"/>
+      <text x="292" y="118" fill="#e8ebf0">macOS · Linux</text>
+      <rect x="432" y="96" width="150" height="32" rx="16" fill="#ffffff" opacity="0.07"/>
+      <text x="452" y="118" fill="#e8ebf0">No runtime deps</text>
+      <rect x="592" y="96" width="120" height="32" rx="16" fill="#ffffff" opacity="0.07"/>
+      <text x="612" y="118" fill="#e8ebf0">MIT License</text>
+    </g>
+  </g>
+  <text x="1128" y="268" text-anchor="end" fill="#8b93a1" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15">Gopeed 1.9.3+</text>
+</svg>

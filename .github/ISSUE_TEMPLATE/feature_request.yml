@@ -1,0 +1,37 @@
+name: Feature request
+description: Suggest a parsing, platform, or UX improvement
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请先确认建议仍在项目范围内：仅 itch.io、公开/免费内容、不绕过认证。
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is missing or inconvenient?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: How should it work?
+    validations:
+      required: true
+  - type: input
+    id: example
+    attributes:
+      label: Example public page (optional)
+      placeholder: "https://author.itch.io/game"
+    validations:
+      required: false
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - label: This request is for public/free itch.io content and does not require bypassing login, purchase, or age checks.
+          required: true

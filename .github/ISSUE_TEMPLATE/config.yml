@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security report
+    url: https://github.com/HanphoneJan/gopeed-extension-itch/security/advisories/new
+    about: Report vulnerabilities privately; do not post cookies or signed URLs.
+  - name: Gopeed documentation
+    url: https://docs.gopeed.com/dev-extension.html
+    about: Official Gopeed extension development documentation.

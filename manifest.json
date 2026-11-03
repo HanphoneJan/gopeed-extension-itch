@@ -1,0 +1,137 @@
+{
+  "name": "itch-io-downloader",
+  "author": "hanphone",
+  "title": "itch.io Downloader",
+  "description": "Resolve public/free itch.io game pages into a complete Gopeed file list (APK, Windows, macOS, Linux) and refresh the short-lived signed URL.",
+  "icon": "icon.png",
+  "version": "1.1.0",
+  "homepage": "https://github.com/HanphoneJan/gopeed-extension-itch",
+  "repository": {
+    "url": "https://github.com/HanphoneJan/gopeed-extension-itch"
+  },
+  "scripts": [
+    {
+      "event": "onResolve",
+      "match": {
+        "urls": [
+          "*://*.itch.io/*",
+          "*://itch.io/*"
+        ]
+      },
+      "entry": "index.js"
+    },
+    {
+      "event": "onStart",
+      "match": {
+        "labels": [
+          "itchio"
+        ]
+      },
+      "entry": "index.js"
+    },
+    {
+      "event": "onError",
+      "match": {
+        "labels": [
+          "itchio"
+        ]
+      },
+      "entry": "index.js"
+    }
+  ],
+  "settings": [
+    {
+      "name": "platform",
+      "title": "Download platform",
+      "description": "all: list every upload (default). apk: Android APK only (falls back to other files when no APK exists). desktop: Windows/macOS/Linux files.",
+      "type": "string",
+      "value": "all",
+      "options": [
+        {
+          "label": "All files (default)",
+          "value": "all"
+        },
+        {
+          "label": "Android APK only",
+          "value": "apk"
+        },
+        {
+          "label": "Desktop (Windows/macOS/Linux)",
+          "value": "desktop"
+        }
+      ]
+    },
+    {
+      "name": "preferredPlatform",
+      "title": "Preferred file order",
+      "description": "Sorts the list so the most likely file for your device appears first. Gopeed's resolve dialog still preselects every file; uncheck the ones you do not want. auto = APK first, then desktop.",
+      "type": "string",
+      "value": "auto",
+      "options": [
+        {
+          "label": "Auto (APK first)",
+          "value": "auto"
+        },
+        {
+          "label": "Android",
+          "value": "android"
+        },
+        {
+          "label": "Windows",
+          "value": "windows"
+        },
+        {
+          "label": "macOS",
+          "value": "macos"
+        },
+        {
+          "label": "Linux",
+          "value": "linux"
+        },
+        {
+          "label": "Page order",
+          "value": "none"
+        }
+      ]
+    },
+    {
+      "name": "includeArm32",
+      "title": "Include arm32-compat APK",
+      "description": "Only affects platform=apk. When enabled, arm32-compat APKs are listed together with the standard APK. platform=all always lists arm32 APKs.",
+      "type": "boolean",
+      "value": false
+    },
+    {
+      "name": "cookie",
+      "title": "itch.io Cookie (optional)",
+      "description": "Only needed for pages that require an existing login or an age-confirmed session. Paste the Cookie header value from a browser request to itch.io. Stored in Gopeed's extension settings; never logged by this extension.",
+      "type": "string",
+      "value": ""
+    },
+    {
+      "name": "fingerprint",
+      "title": "TLS fingerprint",
+      "description": "Browser fingerprint used by Gopeed for itch.io requests. chrome is recommended; none uses Gopeed's default HTTP client.",
+      "type": "string",
+      "value": "chrome",
+      "options": [
+        {
+          "label": "Chrome (recommended)",
+          "value": "chrome"
+        },
+        {
+          "label": "Firefox",
+          "value": "firefox"
+        },
+        {
+          "label": "Safari",
+          "value": "safari"
+        },
+        {
+          "label": "None",
+          "value": "none"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+# Dependencies (the extension itself has none)
+node_modules/
+package-lock.json
+
+# Gopeed / test output
+logs/
+*.log
+storage/
+downloads/
+*.apk
+*.zip
+*.rpa
+*.dmg
+*.exe
+*.tar.gz
+*.tgz
+
+# Local secrets and test artifacts
+.env
+.env.*
+secrets/
+*.cookie
+cookie.txt
+cookies.txt
+tmp/
+.tmp/
+test-output/
