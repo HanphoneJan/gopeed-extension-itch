@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `onError` rebuilds the resumable source after an app restart and continues from
   the bytes already on disk.
 
+### Verified
+
+- Gopeed 2.0.0-beta.4 (Android) with a proxy that resets the connection partway
+  through a ~560 MB download: the task resumed from the last received byte,
+  finished, passed `unzip -t`, and the APK installed successfully.
+
 ### Changed
 
 - Documented the 1.9.x workaround for multi-connection corruption: set HTTP

@@ -42,6 +42,7 @@ https://github.com/HanphoneJan/gopeed-extension-itch
 | `fetch` Cookie | v1.9.3 无 cookie jar；扩展用显式 `Cookie` 设置。`main` 有 jar，但统一使用 `credentials: 'omit'` |
 | 签名 URL | 文件接口返回的 R2 URL 约 60 秒过期（`X-Amz-Expires=60`） |
 | `gopeed.runtime.blob` | 仅 2.x 提供；`createObjectURL(opener, {size, range})` 注册本地可续传数据源，1.9.x 为 `undefined` |
+| 2.0.0-beta.4 实测 | blob 续传可用；代理中途重置连接后，任务从断点继续，`unzip -t` 无错误，APK 安装成功 |
 
 已确认：`onStart` 可以读/改克隆出来的 `task.meta.opts`，但**真实任务的 connections 不会被改回**；因此扩展无法强制单连接，只能文档提示。
 
@@ -180,3 +181,8 @@ node --test test/index.test.js
 
 `blob opener resumes from the last byte after a truncated response` 与
 `blob opener re-signs and retries when the signed URL expires` 覆盖了截断续传和 403 重签。
+
+## 两个容易踩的坑
+
+- **解析期间的占位行**：v2 在解析完成前会先在文件列表里显示一行占位（名称就是页面 URL），几十秒后才替换成真实文件。不要据此判断“扩展没生效”，等解析结束再看。
+- **不要用零字节数判断完整性**：APK 内部可能本来就有大段零数据，统计零字节不能区分“合法的零”和“没写进去的空洞”。验证用 `unzip -t`（或与已知可用的文件比对 MD5）。

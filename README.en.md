@@ -174,6 +174,8 @@ What that gives you:
 - One connection or many, the file stays complete.
 - If the app restarts and the task fails, `onError` rebuilds the source and continues from what is already on disk.
 
+Verified on Gopeed 2.0.0-beta.4 (Android): after the proxy reset the connection mid-download, the task resumed from the last byte, `unzip -t` reported no errors, and the APK installed successfully.
+
 ### Gopeed 1.9.x: set connections to 1
 
 1.9.x has no streaming API, so the extension can only return the signed URL. **Set connections to 1** and keep the network stable; a drop can still leave holes, so verify:
@@ -183,6 +185,8 @@ unzip -t filename.apk
 ```
 
 `No errors detected` means the archive is complete.
+
+Do not judge a download by its byte count of zeros: an APK can legitimately contain large zero-filled regions, so that number says nothing about integrity. Trust `unzip -t` or a successful install.
 
 ---
 
