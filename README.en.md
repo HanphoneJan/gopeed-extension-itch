@@ -23,10 +23,9 @@
 ---
 
 > [!WARNING]
-> **Set Gopeed's HTTP connections to 1 before downloading large files.**
-> itch.io download URLs expire in about 60 seconds. With Gopeed's default multi-connection mode, connections created after expiry can fail and leave zero-filled holes; the APK may then fail to install with a "package is corrupt" message. One connection avoids this.
->
-> One connection can be slower, especially on high-bandwidth, high-latency links, but it gives you a complete file. For small files that finish within 60 seconds, the default multi-connection mode is usually fine. Set this per task for itch.io large files; there is no need to change the global default for other sites.
+> **Gopeed 2.x: downloads resume automatically; no connection change needed.**
+> **Gopeed 1.9.x: set HTTP connections to 1 before downloading large files.**
+> itch.io download URLs expire in about 60 seconds. Gopeed 1.9.x has no extension streaming API, so a dropped connection can only retry an expired URL and may leave zero-filled holes; the APK then fails with "package is corrupt". On 2.x the extension serves a local resumable source and re-signs every range request, so a dropped connection continues from the last byte.
 
 ## Features
 
@@ -34,6 +33,7 @@
 - Supports APK, Windows, macOS, Linux, and other files; it is not APK-only.
 - Optional platform sorting: APK, Windows, macOS, or Linux first.
 - Handles itch.io's temporary download URLs and refreshes them before download.
+- On Gopeed 2.x, **resumable downloads**: every Range request is re-signed, so a dropped connection continues from the last byte instead of leaving holes.
 - Clear errors for login, age gates, no files, external links, and rate limits; never bypasses authentication.
 - Optional Cookie; public pages usually need none.
 - Pure JavaScript, zero runtime dependencies; does not log cookies, CSRF tokens, or signed URLs.
@@ -159,44 +159,30 @@ How to get it (never post it in chat, issues, or the repository):
 
 itch.io's download URL is valid for about **60 seconds**. The extension refreshes it before starting the download and tries to refresh again when a task fails with 401/403.
 
-If a connection drops and a new one starts after 60 seconds, Gopeed may not be able to recover with the old URL. Symptoms include:
+### Gopeed 2.x: automatic resume
 
-- the task shows `done` but the file has zero-filled holes;
-- the APK fails to install with "package is corrupt";
-- `unzip -t` fails.
+2.x exposes `gopeed.runtime.blob`. The extension no longer hands the signed URL to the downloader; it registers a local resumable source:
 
-**Fix: set Gopeed's HTTP connections to 1 and download again.** A single connection can keep reading after the URL expiry.
+```text
+Gopeed → local blob source → every Range request → fresh itch.io signature → R2
+```
 
-Verify an APK with:
+What that gives you:
+
+- Every range uses its own fresh signature, so a connection opened after 60 seconds cannot hit 403.
+- A connection that ends early resumes from the last received byte, up to 40 attempts, and a partial file is never reported as complete.
+- One connection or many, the file stays complete.
+- If the app restarts and the task fails, `onError` rebuilds the source and continues from what is already on disk.
+
+### Gopeed 1.9.x: set connections to 1
+
+1.9.x has no streaming API, so the extension can only return the signed URL. **Set connections to 1** and keep the network stable; a drop can still leave holes, so verify:
 
 ```bash
 unzip -t filename.apk
 ```
 
 `No errors detected` means the archive is complete.
-
-### Is one connection slower?
-
-Possibly. A single connection is often slower on high-bandwidth, high-latency, or lossy links, where multiple connections can fill the pipe. But if your proxy, Wi-Fi, or R2 single-stream throughput is the bottleneck, multiple connections may not help and can add retry/chunk overhead.
-
-Multiple connections do not give linear speedup. Their main benefit is working around per-connection throttling and reducing total time on high-latency links. With itch.io's 60-second URL, **later connections are more likely to fail**; for large files, one connection is the safer trade.
-
-### Why can a one-connection task still finish "instantly" and produce a corrupt file?
-
-Gopeed 1.9.3 marks an HTTP connection as complete when it sees an early EOF, without checking whether the connection actually read all bytes assigned to it. A proxy/VPN/network interruption can close the connection early; Gopeed has already preallocated the full file, so the task shows `done` while the content contains zero-filled holes.
-
-One connection only reduces parallel connection creation; it cannot prevent a **single connection from ending early**. Try:
-
-- Disable VPN/proxy so `cloudflarestorage.com` is reached directly;
-- Use stable Wi-Fi and keep Gopeed in the foreground/screen on;
-- Always verify with `unzip -t`;
-- For very large files, use a downloader that validates `Content-Length`, or wait for an upstream Gopeed fix.
-
-### Can we fetch the URL with one connection and download with many?
-
-Yes — Gopeed already does that: the extension resolves the signed URL once, and Gopeed uses it for multiple Range requests.
-
-The problem is not fetching the URL, but its 60-second lifetime: connections opened or retried after 60 seconds are rejected by R2. Safe multi-connection would need a fresh URL per connection, for example a stable local proxy that redirects every Range request to a newly signed URL. That requires an extra local service and is not possible inside a pure Goja extension, so one connection remains the practical choice for large files.
 
 ---
 
@@ -212,8 +198,8 @@ The problem is not fetching the URL, but its 60-second lifetime: connections ope
 | `No downloadable files` | The game may be unpublished, delisted, paid/claimed, or the uploads were removed. The VOTV example requires claiming the game and a Cookie first. |
 | `Failed to get signed URL (HTTP 403)` | Cookie expired/missing, or itch.io rejected the request; refresh the Cookie or retry later. |
 | `Failed to get signed URL (HTTP 429)` | itch.io rate limit; wait a few minutes. |
-| Installer says "package is corrupt" | Delete the task/file, set connections to **1**, download over a stable direct connection, and run `unzip -t`. If it still fails, this may be Gopeed's early-EOF limitation. |
-| Download 403/incomplete | Signed URL expired or a connection was recreated after 60 seconds; set connections to 1 and retry. |
+| Installer says "package is corrupt" | Make sure you are not reinstalling an old file: resolve again and delete the old one. On 2.x the extension resumes automatically; on 1.9.x set connections to **1** and retry. |
+| Download 403/incomplete | Signed URL expired. On 2.x, reinstall the extension and check it is version 1.2.0 or newer; on 1.9.x set connections to 1 and retry. |
 
 Logs: Gopeed's `logs/extension.log`. The extension logs only public filenames and states; URLs, cookies, CSRF values, and signed parameters are redacted.
 
@@ -226,7 +212,7 @@ Logs: Gopeed's `logs/extension.log`. The extension logs only public filenames an
 - No uploads that point to external sites (`external: true`).
 - Only `author.itch.io` game pages.
 - Page structure changes may require a parser update.
-- Automatic resume after a dropped connection is not guaranteed if more than 60 seconds pass.
+- Resumable downloads require Gopeed 2.x; 1.9.x is still bound by the 60-second signature.
 - Gopeed preselects all files in the resolve dialog; the extension cannot preselect only one. Use `platform` to filter or uncheck manually.
 - Host OS detection is not available; `preferredPlatform=auto` is a fixed "APK first" order, not OS detection.
 

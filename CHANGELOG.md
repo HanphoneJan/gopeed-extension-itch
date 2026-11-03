@@ -5,12 +5,20 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.2.0] - 2026-11-04
+
+### Added
+
+- Resumable downloads on Gopeed 2.x through `gopeed.runtime.blob`: every Range
+  request re-signs the itch.io URL, an interrupted connection continues from the
+  last received byte, and a partial file is never reported as complete.
+- `onError` rebuilds the resumable source after an app restart and continues from
+  the bytes already on disk.
 
 ### Changed
 
-- Documented the required workaround for Gopeed multi-connection corruption:
-  set HTTP connections to 1 before downloading large itch.io files.
+- Documented the 1.9.x workaround for multi-connection corruption: set HTTP
+  connections to 1 before downloading large itch.io files.
 - Added a troubleshooting entry for "installer says the package is corrupt"
   and an `unzip -t` verification tip.
 - Reorganized README for end users; developer mode, API notes, and test

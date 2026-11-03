@@ -2,9 +2,9 @@
   "name": "itch-io-downloader",
   "author": "hanphone",
   "title": "itch.io Downloader",
-  "description": "Resolve public/free itch.io game pages into a complete Gopeed file list (APK, Windows, macOS, Linux) and refresh the short-lived signed URL.",
+  "description": "Resolve public/free itch.io game pages into a complete Gopeed file list (APK, Windows, macOS, Linux), refresh the short-lived signed URL, and resume dropped downloads on Gopeed 2.x.",
   "icon": "icon.png",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "homepage": "https://github.com/HanphoneJan/gopeed-extension-itch",
   "repository": {
     "url": "https://github.com/HanphoneJan/gopeed-extension-itch"

@@ -41,6 +41,7 @@ https://github.com/HanphoneJan/gopeed-extension-itch
 | `task.meta.res.files[].req` | 深拷贝，修改不会影响真实任务；HTTP fetcher 使用 `task.Meta.Req`，扩展不依赖它 |
 | `fetch` Cookie | v1.9.3 无 cookie jar；扩展用显式 `Cookie` 设置。`main` 有 jar，但统一使用 `credentials: 'omit'` |
 | 签名 URL | 文件接口返回的 R2 URL 约 60 秒过期（`X-Amz-Expires=60`） |
+| `gopeed.runtime.blob` | 仅 2.x 提供；`createObjectURL(opener, {size, range})` 注册本地可续传数据源，1.9.x 为 `undefined` |
 
 已确认：`onStart` 可以读/改克隆出来的 `task.meta.opts`，但**真实任务的 connections 不会被改回**；因此扩展无法强制单连接，只能文档提示。
 
@@ -143,3 +144,39 @@ Gopeed 通过 git 仓库安装和更新，不需要单独构建产物。市场�
 - 不要提交 Cookie、CSRF token、签名 URL、下载的游戏文件。
 - 测试 fixture 使用假 token 和假域名。
 - 发现安全问题请阅读 [SECURITY.md](../SECURITY.md)。
+
+## 可续传数据源（Gopeed 2.x）
+
+1.9.x 只能把签名 URL 直接交给 Gopeed 的 HTTP 下载器。签名 60 秒过期后，断线重试拿到的 403 会被下载器当作“连接数超限”忽略，于是任务显示完成但文件带空洞。1.9.x 没有流式接口，扩展无法介入。
+
+2.x 提供 `gopeed.runtime.blob`，扩展改成本地数据源：
+
+```text
+onResolve
+  ├─ 探测文件（Range 0-0）得到 name / size / contentType
+  ├─ 每个文件 createObjectURL(rangeOpener, {size, range:true})
+  └─ files[].req.url = 本地 blob URL，labels 加 itchBlob=1 / itchSize
+
+Gopeed → 本地 blob HTTP 服务 → rangeOpener({offset, end})
+  ├─ signedUrlForRange：40 秒缓存 + 并发合并；403 时作废重签
+  ├─ fetch(Range: bytes=<pos>-<end>)
+  ├─ 逐块 enqueue（每次 pull 一块，提供背压）
+  └─ 未读满 → 关掉当前响应，从 pos 重新签名继续（最多 40 次）
+```
+
+要点：
+
+- 打开函数只接受 `{offset, end}`，必须返回 `ReadableStream`；不能在失败时直接 `controller.error`，否则本地 blob 源两次报错后会被判定失效。
+- 每次 `pull` 只 `enqueue` 一块，避免大文件把整段缓冲进内存。
+- `onStart` 遇到 `itchBlob=1` 直接返回，不能把本地 URL 换成签名 URL。
+- `onError` 遇到 `itchBlob=1` 时重建数据源再 `task.continue()`，用于应用重启后会话丢失的情况。
+- 没有 blob 接口时（1.9.x）自动退回原来的签名 URL 路径，行为不变。
+
+测试：
+
+```bash
+node --test test/index.test.js
+```
+
+`blob opener resumes from the last byte after a truncated response` 与
+`blob opener re-signs and retries when the signed URL expires` 覆盖了截断续传和 403 重签。

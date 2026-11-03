@@ -1048,6 +1048,7 @@
             name: fileName,
             size: size,
             url: signedUrl,
+            contentType: info.contentType || '',
             upload: item,
             platforms: item.platforms
           });
@@ -1095,6 +1096,247 @@
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // Resumable blob source (Gopeed 2.x)
+  // ---------------------------------------------------------------------------
+  //
+  // itch.io signs its download URLs for about 60 seconds. A plain HTTP task
+  // therefore cannot recover when the connection drops later: every retry
+  // reuses a dead URL, gets HTTP 403, and Gopeed may end up marking the task
+  // done while parts of the file are still missing. On Gopeed 2.x the extension
+  // can expose a local blob source instead, and re-sign the itch URL for every
+  // range request from inside the stream. A dropped connection then resumes
+  // from the last byte received, with a fresh signature every time.
+
+  var SIGNED_URL_TTL_MS = 40 * 1000;
+  var MAX_RANGE_ATTEMPTS = 40;
+  var rangeState = {};
+
+  function getBlobApi() {
+    try {
+      if (typeof gopeed !== 'undefined' && gopeed && gopeed.runtime && gopeed.runtime.blob &&
+          typeof gopeed.runtime.blob.createObjectURL === 'function') {
+        return gopeed.runtime.blob;
+      }
+    } catch (error) {
+      // Older Gopeed builds have no blob runtime.
+    }
+    return null;
+  }
+
+  function sleep(ms) {
+    return new Promise(function (resolve) {
+      if (typeof setTimeout === 'function') {
+        setTimeout(resolve, ms);
+      } else {
+        resolve();
+      }
+    });
+  }
+
+  function rangeCacheKey(page, uploadId) {
+    return page.base + '|' + String(uploadId);
+  }
+
+  function forgetSignedUrl(page, uploadId) {
+    delete rangeState[rangeCacheKey(page, uploadId)];
+  }
+
+  function resetRangeCache() {
+    rangeState = {};
+  }
+
+  async function signedUrlForRange(page, uploadId, settings, fetchImpl, logger) {
+    var key = rangeCacheKey(page, uploadId);
+    var cached = rangeState[key];
+    var now = Date.now();
+    if (cached && cached.url && now - cached.at < SIGNED_URL_TTL_MS) {
+      return cached.url;
+    }
+    if (cached && cached.pending) {
+      return cached.pending;
+    }
+    var state = cached || {};
+    state.pending = (async function () {
+      var csrf = findCsrf(await fetchPage(page, settings, fetchImpl, logger));
+      if (!csrf) {
+        throwUser('刷新签名链接失败：页面缺少 CSRF token，可能需要登录 Cookie。');
+      }
+      return resolveSignedUrl(page, uploadId, csrf, settings, fetchImpl, logger);
+    })();
+    rangeState[key] = state;
+    try {
+      var url = await state.pending;
+      rangeState[key] = { url: url, at: Date.now() };
+      logger.debug('[itch] signed URL refreshed for upload ' + uploadId);
+      return url;
+    } catch (error) {
+      if (rangeState[key] === state) {
+        delete rangeState[key];
+      }
+      throw error;
+    }
+  }
+
+  function makeBlobOpener(page, upload, size, settings, fetchImpl, logger) {
+    return function (range) {
+      var start = range && typeof range.offset === 'number' && range.offset > 0 ? range.offset : 0;
+      var end = range && typeof range.end === 'number' && range.end >= 0 ? range.end : size - 1;
+      if (end > size - 1) {
+        end = size - 1;
+      }
+      var doFetch = getFetch(fetchImpl);
+      var pos = start;
+      var reader = null;
+      var attempts = 0;
+      var requestStart = start;
+
+      return new ReadableStream({
+        async pull(controller) {
+          for (;;) {
+            if (pos > end) {
+              controller.close();
+              return;
+            }
+            if (!reader) {
+              requestStart = pos;
+              try {
+                var url = await signedUrlForRange(page, upload.id, settings, fetchImpl, logger);
+                var response = await doFetch(url, {
+                  method: 'GET',
+                  headers: {
+                    Range: 'bytes=' + pos + '-' + end,
+                    Accept: '*/*'
+                  },
+                  credentials: 'omit',
+                  redirect: 'follow'
+                });
+                if (response.status === 401 || response.status === 403) {
+                  forgetSignedUrl(page, upload.id);
+                  throw new Error('签名链接已过期（HTTP ' + response.status + '）');
+                }
+                if (response.status !== 200 && response.status !== 206) {
+                  throw new Error('HTTP ' + response.status);
+                }
+                if (response.status === 200 && pos > 0) {
+                  throw new Error('服务器忽略了 Range 请求');
+                }
+                if (response.status === 206) {
+                  var contentRange = response.headers && typeof response.headers.get === 'function'
+                    ? response.headers.get('content-range')
+                    : '';
+                  var rangeStart = /bytes\s+(\d+)-/.exec(contentRange || '');
+                  if (rangeStart && parseInt(rangeStart[1], 10) !== pos) {
+                    throw new Error('服务器返回的分段位置不正确');
+                  }
+                }
+                if (!response.body || typeof response.body.getReader !== 'function') {
+                  throw new Error('响应没有可读取的内容');
+                }
+                reader = response.body.getReader();
+              } catch (error) {
+                attempts++;
+                logger.warn('[itch] range retry ' + attempts + ' at ' + pos + ': ' + safeMessage(error));
+                if (attempts >= MAX_RANGE_ATTEMPTS) {
+                  controller.error(error);
+                  return;
+                }
+                await sleep(Math.min(500 * attempts, 4000));
+                continue;
+              }
+            }
+            var chunk;
+            try {
+              chunk = await reader.read();
+            } catch (error) {
+              reader = null;
+              attempts++;
+              logger.warn('[itch] range read failed at ' + pos + ': ' + safeMessage(error));
+              if (attempts >= MAX_RANGE_ATTEMPTS) {
+                controller.error(error);
+                return;
+              }
+              await sleep(Math.min(500 * attempts, 4000));
+              continue;
+            }
+            if (!chunk || chunk.done) {
+              // The connection ended before the requested range was complete.
+              // Re-sign and continue from the last byte received.
+              reader = null;
+              if (pos === requestStart) {
+                attempts++;
+                if (attempts >= MAX_RANGE_ATTEMPTS) {
+                  controller.error(new Error('连接提前结束，未能继续下载（位置 ' + pos + '）'));
+                  return;
+                }
+                await sleep(Math.min(500 * attempts, 4000));
+              }
+              continue;
+            }
+            var value = chunk.value;
+            if (!value || !value.length) {
+              continue;
+            }
+            var remaining = end - pos + 1;
+            if (value.length > remaining) {
+              value = value.slice(0, remaining);
+            }
+            pos += value.length;
+            attempts = 0;
+            controller.enqueue(value);
+            return;
+          }
+        },
+        cancel() {
+          try {
+            if (reader) {
+              reader.cancel();
+            }
+          } catch (error) {
+            // Nothing to clean up.
+          }
+        }
+      });
+    };
+  }
+
+  async function buildDownloadFiles(page, selected, settings, fetchImpl, logger) {
+    var blobApi = getBlobApi();
+    var files = [];
+    for (var i = 0; i < selected.length; i++) {
+      var file = selected[i];
+      var labels = makeLabels(page, file.upload);
+      var url = file.url;
+      if (blobApi && file.size > 0) {
+        try {
+          url = await blobApi.createObjectURL(
+            makeBlobOpener(page, file.upload, file.size, settings, fetchImpl, logger),
+            {
+              size: file.size,
+              range: true,
+              contentType: file.contentType || 'application/octet-stream'
+            }
+          );
+          labels.itchBlob = '1';
+          labels.itchSize = String(file.size);
+          logger.info('[itch] resumable source ready for upload ' + file.upload.id);
+        } catch (error) {
+          logger.warn('[itch] resumable source unavailable, using signed URL: ' + safeMessage(error));
+          url = file.url;
+        }
+      }
+      files.push({
+        name: file.name,
+        size: file.size || 0,
+        req: {
+          url: url,
+          labels: labels
+        }
+      });
+    }
+    return files;
+  }
+
   async function resolveGame(pageUrl, rawSettings, fetchImpl, logger) {
     var settings = readSettings(rawSettings);
     applyFingerprint(settings);
@@ -1113,20 +1355,12 @@
     if (selected.length === 0) {
       throwUser('页面没有符合当前 platform 设置的可下载文件。');
     }
+    var files = await buildDownloadFiles(page, selected, settings, fetchImpl, logger);
     logger.info('[itch] resolved ' + page.slug + ': uploads=' + parsed.uploads.length +
       ' selected=' + selected.length + ' platform=' + settings.platform);
     return {
       name: sanitizeFolderName(parsed.title || page.slug),
-      files: selected.map(function (file) {
-        return {
-          name: file.name,
-          size: file.size || 0,
-          req: {
-            url: file.url,
-            labels: makeLabels(page, file.upload)
-          }
-        };
-      })
+      files: files
     };
   }
 
@@ -1231,12 +1465,16 @@
       if (!request) {
         return;
       }
+      var labels = getLabels(request);
+      if (labels && labels.itchBlob === '1') {
+        // The task URL is a local blob source that re-signs itch URLs itself.
+        return;
+      }
       var settings = readSettings(gopeed.settings);
       try {
         applyFingerprint(settings);
         var refreshed = await refreshTask(request, settings, null, logger);
         if (refreshed) {
-          var labels = getLabels(request);
           logger.info('[itch] onStart refreshed signed URL for upload ' + (labels ? labels.itchUploadId : ''));
         }
       } catch (error) {
@@ -1265,6 +1503,40 @@
       }
       if (count >= MAX_ERROR_REFRESHES) {
         logger.warn('[itch] onError refresh limit reached for upload ' + (labels.itchUploadId || ''));
+        return;
+      }
+      if (labels.itchBlob === '1') {
+        // The blob session may be gone (app restart) even though the partial
+        // file is still on disk. Rebuild the source URL and continue from the
+        // bytes Gopeed already wrote.
+        var blobApi = getBlobApi();
+        var size = parseInt(labels.itchSize || '0', 10);
+        if (!blobApi || !(size > 0) || !labels.itchPage || !labels.itchUploadId) {
+          logger.warn('[itch] cannot rebuild resumable source for upload ' + (labels.itchUploadId || ''));
+          return;
+        }
+        try {
+          var page = normalizePageUrl(labels.itchPage);
+          var settings = readSettings(gopeed.settings);
+          applyFingerprint(settings);
+          setRequestUrl(request, await blobApi.createObjectURL(
+            makeBlobOpener(page, { id: labels.itchUploadId }, size, settings, null, logger),
+            { size: size, range: true }
+          ));
+          if (typeof request.putLabel === 'function') {
+            request.putLabel('itchRefreshCount', String(count + 1));
+          } else {
+            labels.itchRefreshCount = String(count + 1);
+          }
+          logger.info('[itch] onError rebuilt resumable source for upload ' + labels.itchUploadId);
+          if (ctx.task && typeof ctx.task.continue === 'function') {
+            ctx.task.continue();
+          } else if (ctx.task && typeof ctx.task.Continue === 'function') {
+            ctx.task.Continue();
+          }
+        } catch (error) {
+          logger.warn('[itch] onError rebuild failed: ' + safeMessage(error));
+        }
         return;
       }
       var settings = readSettings(gopeed.settings);
@@ -1299,13 +1571,16 @@
     LABEL: LABEL,
     MAX_UPLOADS: MAX_UPLOADS,
     attr: attr,
+    buildDownloadFiles: buildDownloadFiles,
     cleanText: cleanText,
     decodeHtml: decodeHtml,
     detectGate: detectGate,
     fallbackFileName: fallbackFileName,
     findCsrf: findCsrf,
+    getBlobApi: getBlobApi,
     isArm32: isArm32,
     isApkName: isApkName,
+    makeBlobOpener: makeBlobOpener,
     normalizePageUrl: normalizePageUrl,
     pageTitle: pageTitle,
     parseContentDisposition: parseContentDisposition,
@@ -1316,6 +1591,7 @@
     parseUploads: parseUploads,
     readSettings: readSettings,
     redact: redact,
+    resetRangeCache: resetRangeCache,
     refreshTask: refreshTask,
     resolveGame: resolveGame,
     sanitizeFilename: sanitizeFilename,

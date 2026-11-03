@@ -617,3 +617,202 @@ test('manifest is valid and wires all three events', () => {
   assert.ok(names.includes('preferredPlatform'));
   assert.ok(names.includes('includeArm32'));
 });
+
+// ---------------------------------------------------------------------------
+// Resumable blob source (Gopeed 2.x)
+// ---------------------------------------------------------------------------
+
+function withBlobRuntime(createObjectURL) {
+  const previous = global.gopeed;
+  global.gopeed = {
+    runtime: {
+      blob: { createObjectURL }
+    }
+  };
+  return () => {
+    if (previous === undefined) {
+      delete global.gopeed;
+    } else {
+      global.gopeed = previous;
+    }
+  };
+}
+
+async function drain(stream) {
+  const reader = stream.getReader();
+  const chunks = [];
+  for (;;) {
+    const result = await reader.read();
+    if (result.done) {
+      break;
+    }
+    for (let i = 0; i < result.value.length; i++) {
+      chunks.push(result.value[i]);
+    }
+  }
+  return Uint8Array.from(chunks);
+}
+
+test('resolveGame returns a blob source URL when the runtime supports it', async () => {
+  const html = fixture('apk-windows-mac-arm32.html');
+  const mock = makeFetchMock(html);
+  const captured = [];
+  const restore = withBlobRuntime(async (opener, options) => {
+    captured.push({ opener, options });
+    return 'gblob://resumable/333';
+  });
+  try {
+    const result = await api.resolveGame(PAGE_URL, { platform: 'apk' }, mock.fetchMock, recordingLogger());
+    assert.equal(result.files.length, 1);
+    assert.equal(result.files[0].req.url, 'gblob://resumable/333');
+    assert.equal(result.files[0].req.labels.itchBlob, '1');
+    assert.equal(result.files[0].req.labels.itchSize, String(471859200));
+    assert.equal(captured.length, 1);
+    assert.equal(captured[0].options.size, 471859200);
+    assert.equal(captured[0].options.range, true);
+    assert.equal(typeof captured[0].opener, 'function');
+  } finally {
+    restore();
+  }
+});
+
+test('resolveGame falls back to the signed URL when blob creation fails', async () => {
+  const html = fixture('apk-windows-mac-arm32.html');
+  const mock = makeFetchMock(html);
+  const restore = withBlobRuntime(async () => {
+    throw new Error('blob runtime unavailable');
+  });
+  try {
+    const result = await api.resolveGame(PAGE_URL, { platform: 'apk' }, mock.fetchMock, recordingLogger());
+    assert.match(result.files[0].req.url, /^https:\/\/r2\.example\.test\//);
+    assert.equal(result.files[0].req.labels.itchBlob, undefined);
+  } finally {
+    restore();
+  }
+});
+
+test('blob opener resumes from the last byte after a truncated response', async () => {
+  const payload = Uint8Array.from({ length: 200 }, (_, index) => index % 251);
+  const html = fixture('apk-windows-mac-arm32.html');
+  const ranges = [];
+  let truncatedOnce = false;
+
+  async function fetchMock(url, init) {
+    const target = String(url);
+    const options = init || {};
+    if (target === PAGE_URL) {
+      return response(html, { status: 200, headers: { 'content-type': 'text/html' } });
+    }
+    if (/\/file\/\d+\?/.test(target)) {
+      return response(JSON.stringify({ external: false, url: 'https://r2.example.test/apk' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      });
+    }
+    if (target === 'https://r2.example.test/apk') {
+      const header = options.headers && options.headers.Range;
+      ranges.push(header);
+      const match = /^bytes=(\d+)-(\d+)$/.exec(header || '');
+      if (!match) {
+        throw new Error(`missing range header: ${header}`);
+      }
+      const start = Number(match[1]);
+      const end = Number(match[2]);
+      const slice = payload.slice(start, end + 1);
+      if (!truncatedOnce) {
+        // Drop the connection halfway through the first response.
+        truncatedOnce = true;
+        return response(new ReadableStream({
+          start(controller) {
+            controller.enqueue(slice.slice(0, 50));
+            controller.close();
+          }
+        }), {
+          status: 206,
+          headers: {
+            'content-type': 'application/octet-stream',
+            'content-range': `bytes ${start}-${end}/${payload.length}`
+          }
+        });
+      }
+      return response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(slice);
+          controller.close();
+        }
+      }), {
+        status: 206,
+        headers: {
+          'content-type': 'application/octet-stream',
+          'content-range': `bytes ${start}-${end}/${payload.length}`
+        }
+      });
+    }
+    throw new Error(`unexpected URL in test: ${target}`);
+  }
+
+  api.resetRangeCache();
+  const settings = api.readSettings({});
+  const opener = api.makeBlobOpener(
+    api.normalizePageUrl(PAGE_URL),
+    { id: '333' },
+    payload.length,
+    settings,
+    fetchMock,
+    recordingLogger()
+  );
+  const bytes = await drain(opener({ offset: 0, end: -1 }));
+
+  assert.equal(bytes.length, payload.length);
+  assert.deepEqual(Array.from(bytes), Array.from(payload));
+  assert.deepEqual(ranges, ['bytes=0-199', 'bytes=50-199']);
+});
+
+test('blob opener re-signs and retries when the signed URL expires', async () => {
+  const payload = Uint8Array.from({ length: 40 }, (_, index) => 255 - index);
+  const html = fixture('apk-windows-mac-arm32.html');
+  let rejectedOnce = false;
+  let signed = 0;
+
+  async function fetchMock(url, init) {
+    const target = String(url);
+    const options = init || {};
+    if (target === PAGE_URL) {
+      return response(html, { status: 200, headers: { 'content-type': 'text/html' } });
+    }
+    if (/\/file\/\d+\?/.test(target)) {
+      signed++;
+      return response(JSON.stringify({ external: false, url: 'https://r2.example.test/apk' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      });
+    }
+    if (target === 'https://r2.example.test/apk') {
+      if (!rejectedOnce) {
+        rejectedOnce = true;
+        return response('expired', { status: 403 });
+      }
+      const match = /^bytes=(\d+)-(\d+)$/.exec((options.headers && options.headers.Range) || '');
+      const start = Number(match[1]);
+      const end = Number(match[2]);
+      return response(payload.slice(start, end + 1), { status: 206 });
+    }
+    throw new Error(`unexpected URL in test: ${target}`);
+  }
+
+  api.resetRangeCache();
+  const settings = api.readSettings({});
+  const opener = api.makeBlobOpener(
+    api.normalizePageUrl(PAGE_URL),
+    { id: '333' },
+    payload.length,
+    settings,
+    fetchMock,
+    recordingLogger()
+  );
+  const bytes = await drain(opener({ offset: 0, end: -1 }));
+
+  assert.equal(bytes.length, payload.length);
+  assert.equal(rejectedOnce, true);
+  assert.ok(signed >= 2, 'a fresh signature is requested after HTTP 403');
+});
