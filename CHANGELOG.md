@@ -5,6 +5,25 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 2026-11-04
+
+### Added
+
+- `externalHints` setting (default on): every upload that itch.io marks
+  `External` now appears in the resolve dialog as a small `.txt` file with that
+  file's link, so a page whose installers live on MediaFire/MEGA no longer looks
+  like it only has one file. The hint task re-signs and rebuilds its blob in
+  `onStart`, like normal downloads.
+- Hints are generated only when the blob runtime exists (Gopeed 2.x); on 1.9.x
+  external uploads are still skipped, and a page with only external uploads
+  still fails with an explanation.
+
+### Changed
+
+- `probeUploads` now returns hosted files and external uploads separately, and
+  resolving a page that only has external uploads returns hint files instead of
+  a generic error on 2.x.
+
 ## [1.2.1] - 2026-11-04
 
 ### Changed

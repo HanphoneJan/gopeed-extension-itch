@@ -4,7 +4,7 @@
   "title": "itch.io Downloader",
   "description": "Resolve public/free itch.io game pages into a complete Gopeed file list (APK, Windows, macOS, Linux), refresh the short-lived signed URL, and resume dropped downloads on Gopeed 2.x.",
   "icon": "icon.png",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "homepage": "https://github.com/HanphoneJan/gopeed-extension-itch",
   "repository": {
     "url": "https://github.com/HanphoneJan/gopeed-extension-itch"
@@ -93,6 +93,13 @@
           "value": "none"
         }
       ]
+    },
+    {
+      "name": "externalHints",
+      "title": "List external uploads as text hints",
+      "description": "Pages can list files that are hosted elsewhere (MediaFire, MEGA, ...); itch.io only links to a landing page. When enabled, each such upload appears in the resolve dialog as a small .txt file with the link, so you can see what the page has and open it manually. Requires Gopeed 2.x.",
+      "type": "boolean",
+      "value": true
     },
     {
       "name": "includeArm32",

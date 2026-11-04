@@ -572,7 +572,7 @@ test('skips external uploads without requesting their file endpoint', async () =
   assert.equal(resource.files.length, 1);
   assert.equal(resource.files[0].name, 'Rift Test Walkthrough mod.zip');
   assert.equal(calls.some((url) => /\/file\/(555|666)\?/.test(url)), false);
-  assert.match(logger.lines.join('\n'), /skipped 2 external upload/);
+  assert.match(logger.lines.join('\n'), /external=0/);
 });
 
 test('explains a page whose uploads are all external', async () => {
@@ -592,6 +592,179 @@ test('explains a page whose uploads are all external', async () => {
     /托管在外部站点/
   );
   assert.deepEqual(calls, [PAGE_URL]);
+});
+
+test('lists external uploads as text hint files', async () => {
+  const html = fixture('external-uploads.html');
+  const logger = recordingLogger();
+  const calls = [];
+  async function fetchMock(url, init) {
+    const textUrl = String(url);
+    calls.push({ url: textUrl, method: (init && init.method) || 'GET' });
+    if (textUrl === PAGE_URL) {
+      return response(html, { status: 200, headers: { 'content-type': 'text/html' } });
+    }
+    const fileMatch = /\/file\/(\d+)\?/.exec(textUrl);
+    if (fileMatch) {
+      const urls = {
+        555: 'https://www.mediafire.com/file/aaa/pc.zip/file',
+        666: 'https://mega.nz/file/bbb',
+        777: 'https://r2.example.test/walkthrough'
+      };
+      // The CSRF token must be sent for hint lookups too.
+      assert.match(String((init || {}).body || ''), /csrf_token=TESTCSRF/);
+      return response(JSON.stringify({ external: fileMatch[1] !== '777', url: urls[fileMatch[1]] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      });
+    }
+    if (textUrl === 'https://r2.example.test/walkthrough') {
+      return response(new Uint8Array([0]), {
+        status: 206,
+        headers: {
+          'content-range': 'bytes 0-0/784384',
+          'content-disposition': 'attachment; filename="Rift Test Walkthrough mod.zip"',
+          'content-type': 'application/octet-stream'
+        }
+      });
+    }
+    throw new Error(`unexpected URL in test: ${textUrl}`);
+  }
+
+  const captured = [];
+  const restore = withBlobRuntime(async (opener, options) => {
+    captured.push({ opener, options });
+    return `gblob://hint/${captured.length}`;
+  });
+  try {
+    const resource = await api.resolveGame(PAGE_URL, { platform: 'all' }, fetchMock, logger);
+    assert.equal(resource.files.length, 3);
+    assert.equal(resource.files[0].name, 'Rift Test Walkthrough mod.zip');
+    assert.equal(resource.files[1].name, 'Rift Test 1.0 PC - MIRROR.txt');
+    assert.equal(resource.files[2].name, 'Rift Test 1.0 ANDROID - MIRROR.txt');
+    assert.equal(resource.files[1].req.url, 'gblob://hint/1');
+    assert.equal(resource.files[1].req.labels.itchHint, '1');
+    assert.equal(resource.files[1].req.labels.itchExternalUploadId, '555');
+    assert.equal(resource.files[1].req.labels.itchHintName, 'Rift Test 1.0 PC - MIRROR');
+    assert.equal(captured[0].options.contentType, 'text/plain; charset=utf-8');
+    assert.equal(captured[0].options.size, resource.files[1].size);
+
+    const bytes = await drain(captured[0].opener({ offset: 0, end: resource.files[1].size - 1 }));
+    const text = Buffer.from(bytes).toString('utf8');
+    assert.match(text, /Rift Test 1\.0 PC - MIRROR/);
+    assert.match(text, /https:\/\/www\.mediafire\.com\/file\/aaa\/pc\.zip\/file/);
+
+    // A partial range only returns that slice of the text.
+    const slice = await drain(captured[0].opener({ offset: 0, end: 3 }));
+    assert.equal(Buffer.from(slice).toString('utf8'), 'Rift');
+  } finally {
+    restore();
+  }
+});
+
+test('externalHints=false keeps the list to itch.io-hosted files only', async () => {
+  const html = fixture('external-uploads.html');
+  const logger = recordingLogger();
+  const calls = [];
+  async function fetchMock(url) {
+    const textUrl = String(url);
+    calls.push(textUrl);
+    if (textUrl === PAGE_URL) {
+      return response(html, { status: 200, headers: { 'content-type': 'text/html' } });
+    }
+    if (/\/file\/777\?/.test(textUrl)) {
+      return response(JSON.stringify({ external: false, url: 'https://r2.example.test/walkthrough' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      });
+    }
+    if (textUrl === 'https://r2.example.test/walkthrough') {
+      return response(new Uint8Array([0]), {
+        status: 206,
+        headers: {
+          'content-range': 'bytes 0-0/784384',
+          'content-disposition': 'attachment; filename="Rift Test Walkthrough mod.zip"',
+          'content-type': 'application/octet-stream'
+        }
+      });
+    }
+    throw new Error(`unexpected URL in test: ${textUrl}`);
+  }
+  const restore = withBlobRuntime(async () => 'gblob://unused');
+  try {
+    const resource = await api.resolveGame(PAGE_URL, { platform: 'all', externalHints: false }, fetchMock, logger);
+    assert.equal(resource.files.length, 1);
+    assert.equal(resource.files[0].name, 'Rift Test Walkthrough mod.zip');
+    assert.equal(calls.some((url) => /\/file\/(555|666)\?/.test(url)), false);
+  } finally {
+    restore();
+  }
+});
+
+test('a page with only external uploads becomes text hint files', async () => {
+  const html = fixture('external-only.html');
+  const logger = recordingLogger();
+  async function fetchMock(url) {
+    const textUrl = String(url);
+    if (textUrl === PAGE_URL) {
+      return response(html, { status: 200, headers: { 'content-type': 'text/html' } });
+    }
+    const fileMatch = /\/file\/(\d+)\?/.exec(textUrl);
+    if (fileMatch) {
+      return response(JSON.stringify({ external: true, url: `https://www.mediafire.com/file/${fileMatch[1]}/file` }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      });
+    }
+    throw new Error(`unexpected URL in test: ${textUrl}`);
+  }
+  const restore = withBlobRuntime(async () => 'gblob://hint');
+  try {
+    const resource = await api.resolveGame(PAGE_URL, { platform: 'all' }, fetchMock, logger);
+    assert.equal(resource.files.length, 2);
+    assert.deepEqual(resource.files.map((file) => file.name), [
+      'Rift Test 1.0 PC - MIRROR.txt',
+      'Rift Test 1.0 MAC - MIRROR.txt'
+    ]);
+  } finally {
+    restore();
+  }
+});
+
+test('onStart rebuilds a hint blob from page labels', async () => {
+  const html = fixture('external-only.html');
+  const logger = recordingLogger();
+  const request = {
+    url: 'gblob://stale',
+    labels: {
+      itchio: '1',
+      itchHint: '1',
+      itchPage: PAGE_URL,
+      itchExternalUploadId: '888',
+      itchHintName: 'Rift Test 1.0 PC - MIRROR'
+    }
+  };
+  async function fetchMock(url) {
+    const textUrl = String(url);
+    if (textUrl === PAGE_URL) {
+      return response(html, { status: 200, headers: { 'content-type': 'text/html' } });
+    }
+    if (/\/file\/888\?/.test(textUrl)) {
+      return response(JSON.stringify({ external: true, url: 'https://www.mediafire.com/file/zzz/file' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      });
+    }
+    throw new Error(`unexpected URL in test: ${textUrl}`);
+  }
+  const restore = withBlobRuntime(async () => 'gblob://fresh');
+  try {
+    const refreshed = await api.refreshTask(request, {}, fetchMock, logger);
+    assert.equal(refreshed, true);
+    assert.equal(request.url, 'gblob://fresh');
+  } finally {
+    restore();
+  }
 });
 
 test('does not silently fall back to desktop when the APK probe is rate limited', async () => {

@@ -169,6 +169,7 @@
       platform: platform,
       preferredPlatform: preferredPlatform,
       includeArm32: includeArm32,
+      externalHints: !(source.externalHints === false || source.externalHints === 'false'),
       fingerprint: fingerprint
     };
   }
@@ -573,7 +574,7 @@
     return await response.text();
   }
 
-  async function resolveSignedUrl(page, uploadId, csrf, settings, fetchImpl, logger) {
+  async function requestFileEndpoint(page, uploadId, csrf, settings, fetchImpl, logger) {
     var doFetch = getFetch(fetchImpl);
     var endpoint = page.base + '/file/' + encodeURIComponent(String(uploadId)) +
       '?source=view_game&as_props=1';
@@ -623,17 +624,36 @@
       var lightboxType = data.lightbox_type ? String(data.lightbox_type) : 'verification';
       throwUser('该文件需要额外验证（' + lightboxType + '），扩展不会绕过登录/年龄/隔离检查。');
     }
-    if (data.external) {
-      throwUser('该上传指向外部站点，扩展只支持 itch.io 托管的文件。');
-    }
     if (data.errors) {
       throwUser('签名链接获取失败：itch.io 返回错误，请稍后重试或检查 Cookie。');
+    }
+    return data;
+  }
+
+  async function resolveSignedUrl(page, uploadId, csrf, settings, fetchImpl, logger) {
+    var data = await requestFileEndpoint(page, uploadId, csrf, settings, fetchImpl, logger);
+    if (data.external) {
+      throwUser('该上传指向外部站点，扩展只支持 itch.io 托管的文件。');
     }
     if (!data.url) {
       throwUser('签名链接获取失败：响应中没有下载地址。');
     }
     if (!/^https:\/\//i.test(String(data.url))) {
       throwUser('签名链接不是 HTTPS，已拒绝。');
+    }
+    return String(data.url);
+  }
+
+  // External uploads only ever yield a landing page on another host. The URL is
+  // still useful: the extension puts it into a small text file so the resolve
+  // dialog can show which files the page has elsewhere.
+  async function resolveExternalUrl(page, uploadId, csrf, settings, fetchImpl, logger) {
+    var data = await requestFileEndpoint(page, uploadId, csrf, settings, fetchImpl, logger);
+    if (!data.external || !data.url) {
+      return '';
+    }
+    if (!/^https?:\/\//i.test(String(data.url))) {
+      return '';
     }
     return String(data.url);
   }
@@ -1010,15 +1030,19 @@
     var uploads = page.uploads.slice(0, MAX_UPLOADS);
     var preferred = [];
     var fallback = [];
-    var externalCount = 0;
-    var externalNames = [];
+    var externals = [];
     for (var i = 0; i < uploads.length; i++) {
       var upload = uploads[i];
       // External uploads resolve to a landing page on another host, never to a
-      // file: skip them before burning a request on the file endpoint.
+      // file. They are not probed; the resolve dialog gets a small text file
+      // with the link instead.
       if (upload.external) {
-        externalCount++;
-        externalNames.push(String(upload.name || upload.id));
+        var wanted = settings.platform === 'all' ||
+          (settings.platform === 'apk' && uploadMayBeApk(upload)) ||
+          (settings.platform === 'desktop' && uploadMayBeDesktop(upload));
+        if (wanted) {
+          externals.push(upload);
+        }
         continue;
       }
       var isPreferred = settings.platform === 'all' ||
@@ -1094,21 +1118,18 @@
     }
 
     files = dedupeFiles(files);
-    if (externalCount > 0) {
-      logger.info('[itch] skipped ' + externalCount + ' external upload(s) hosted outside itch.io' +
-        (externalNames.length > 0 ? ': ' + externalNames.join(', ') : ''));
-    }
-    if (files.length === 0) {
+    var canHint = externals.length > 0 && settings.externalHints && !!getBlobApi();
+    if (files.length === 0 && !canHint) {
       if (lastError) {
         throwUser(lastError.message || '没有获取到可下载文件，请稍后重试。');
       }
-      if (externalCount > 0) {
-        throwUser('没有找到 itch.io 托管的可下载文件：该页面有 ' + externalCount + ' 个上传托管在外部站点（如 MediaFire、MEGA），' +
+      if (externals.length > 0) {
+        throwUser('没有找到 itch.io 托管的可下载文件：该页面有 ' + externals.length + ' 个上传托管在外部站点（如 MediaFire、MEGA），' +
           'itch.io 只提供跳转页面。扩展无法直接下载这些链接；请在游戏页面手动打开，或等待作者上传 itch.io 托管的文件。');
       }
       throwUser('没有获取到可下载文件，请稍后重试。');
     }
-    return files;
+    return { files: files, externals: externals };
   }
 
   function makeLabels(page, upload) {
@@ -1323,6 +1344,125 @@
     };
   }
 
+  function utf8Bytes(text) {
+    var bytes = [];
+    var str = String(text);
+    for (var i = 0; i < str.length; i++) {
+      var code = str.charCodeAt(i);
+      if (code < 0x80) {
+        bytes.push(code);
+      } else if (code < 0x800) {
+        bytes.push(0xc0 | (code >> 6), 0x80 | (code & 0x3f));
+      } else if (code >= 0xd800 && code <= 0xdbff) {
+        var next = str.charCodeAt(i + 1);
+        if (next >= 0xdc00 && next <= 0xdfff) {
+          var codePoint = 0x10000 + ((code - 0xd800) << 10) + (next - 0xdc00);
+          bytes.push(0xf0 | (codePoint >> 18), 0x80 | ((codePoint >> 12) & 0x3f),
+            0x80 | ((codePoint >> 6) & 0x3f), 0x80 | (codePoint & 0x3f));
+          i++;
+        } else {
+          bytes.push(0xef, 0xbf, 0xbd);
+        }
+      } else {
+        bytes.push(0xe0 | (code >> 12), 0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f));
+      }
+    }
+    return new Uint8Array(bytes);
+  }
+
+  // Blob source for a generated text file: the whole content is already in
+  // memory, so each range request just slices it.
+  function makeTextOpener(bytes) {
+    return function (range) {
+      var start = range && typeof range.offset === 'number' && range.offset > 0 ? range.offset : 0;
+      var end = range && typeof range.end === 'number' && range.end >= 0 ? range.end : bytes.length - 1;
+      if (end > bytes.length - 1) {
+        end = bytes.length - 1;
+      }
+      var pos = start;
+      return new ReadableStream({
+        pull(controller) {
+          if (pos > end) {
+            controller.close();
+            return;
+          }
+          controller.enqueue(bytes.slice(pos, end + 1));
+          pos = end + 1;
+        }
+      });
+    };
+  }
+
+  function externalHintText(page, upload, url) {
+    var name = String((upload && upload.name) || ('upload ' + (upload && upload.id)));
+    var lines = [
+      name,
+      '',
+      '此文件是 itch.io 的 External 上传：文件托管在 itch.io 之外的站点，扩展只下载 itch.io 托管的文件，所以这里只有一个说明文件，不是安装包。',
+      ''
+    ];
+    if (url) {
+      lines.push('请用浏览器打开下面的链接，从该站点下载：');
+      lines.push(url);
+    } else {
+      lines.push('外部链接没有取到，请打开游戏页面手动下载：');
+      lines.push(page.base);
+    }
+    lines.push('');
+    return lines.join('\n');
+  }
+
+  function externalHintFileName(upload) {
+    var name = String((upload && upload.name) || ('upload-' + (upload && upload.id)));
+    return sanitizeFilename(name.replace(/\.txt$/i, '') + '.txt');
+  }
+
+  // Each external upload becomes a small .txt entry so the resolve dialog shows
+  // every file the page lists, with a link the user can open manually.
+  async function buildExternalHintFiles(page, externals, csrf, settings, fetchImpl, logger) {
+    var blobApi = getBlobApi();
+    if (!blobApi || !settings.externalHints || externals.length === 0) {
+      return [];
+    }
+    var files = [];
+    for (var i = 0; i < externals.length; i++) {
+      var upload = externals[i];
+      var url = '';
+      try {
+        url = await resolveExternalUrl(page, upload.id, csrf, settings, fetchImpl, logger);
+      } catch (error) {
+        logger.warn('[itch] external link for upload ' + upload.id + ' unavailable: ' + safeMessage(error));
+      }
+      try {
+        var text = externalHintText(page, upload, url);
+        var bytes = utf8Bytes(text);
+        var blobUrl = await blobApi.createObjectURL(makeTextOpener(bytes), {
+          size: bytes.length,
+          range: true,
+          contentType: 'text/plain; charset=utf-8'
+        });
+        files.push({
+          name: externalHintFileName(upload),
+          size: bytes.length,
+          req: {
+            url: blobUrl,
+            labels: {
+              itchio: '1',
+              itchHint: '1',
+              itchPage: page.base,
+              itchExternalUploadId: String(upload.id),
+              itchHintName: String(upload.name || '')
+            }
+          }
+        });
+        logger.info('[itch] external hint ready for upload ' + upload.id + (url ? '' : ' (link unavailable)'));
+      } catch (error) {
+        logger.warn('[itch] external hint for upload ' + upload.id + ' failed: ' + safeMessage(error));
+      }
+    }
+    return files;
+  }
+
   async function buildDownloadFiles(page, selected, settings, fetchImpl, logger) {
     var blobApi = getBlobApi();
     var files = [];
@@ -1374,13 +1514,22 @@
       title: parsed.title,
       uploads: parsed.uploads
     }, settings, fetchImpl, logger);
-    var selected = selectFiles(probed, settings.platform, settings.includeArm32, settings.preferredPlatform);
-    if (selected.length === 0) {
+    var selected = selectFiles(probed.files, settings.platform, settings.includeArm32, settings.preferredPlatform);
+    var hints = await buildExternalHintFiles(page, probed.externals, parsed.csrf, settings, fetchImpl, logger);
+    if (selected.length === 0 && hints.length === 0) {
+      if (probed.externals.length > 0) {
+        throwUser('没有找到 itch.io 托管的可下载文件：该页面有 ' + probed.externals.length + ' 个上传托管在外部站点（如 MediaFire、MEGA），' +
+          'itch.io 只提供跳转页面。扩展无法直接下载这些链接；请在游戏页面手动打开，或等待作者上传 itch.io 托管的文件。');
+      }
       throwUser('页面没有符合当前 platform 设置的可下载文件。');
     }
-    var files = await buildDownloadFiles(page, selected, settings, fetchImpl, logger);
+    var files = selected.length > 0
+      ? await buildDownloadFiles(page, selected, settings, fetchImpl, logger)
+      : [];
+    // Keep the real files first: the resolve dialog preselects the whole list.
+    files = files.concat(hints);
     logger.info('[itch] resolved ' + page.slug + ': uploads=' + parsed.uploads.length +
-      ' selected=' + selected.length + ' platform=' + settings.platform);
+      ' selected=' + selected.length + ' external=' + hints.length + ' platform=' + settings.platform);
     return {
       name: sanitizeFolderName(parsed.title || page.slug),
       files: files
@@ -1413,11 +1562,35 @@
       return false;
     }
     var pageUrl = labels.itchPage;
-    var uploadId = labels.itchUploadId;
-    if (!pageUrl || !uploadId) {
+    if (!pageUrl) {
       return false;
     }
     var page = normalizePageUrl(pageUrl);
+    if (labels.itchHint === '1') {
+      var blobApi = getBlobApi();
+      var hintId = labels.itchExternalUploadId;
+      if (!blobApi || !hintId) {
+        return false;
+      }
+      var hintHtml = await fetchPage(page, settings, fetchImpl, logger);
+      var hintCsrf = findCsrf(hintHtml);
+      if (!hintCsrf) {
+        throwUser('刷新提示文件失败：页面缺少 CSRF token，可能需要登录 Cookie。');
+      }
+      var externalUrl = await resolveExternalUrl(page, hintId, hintCsrf, settings, fetchImpl, logger);
+      var hintBytes = utf8Bytes(externalHintText(page, { id: hintId, name: labels.itchHintName || '' }, externalUrl));
+      var hintBlobUrl = await blobApi.createObjectURL(makeTextOpener(hintBytes), {
+        size: hintBytes.length,
+        range: true,
+        contentType: 'text/plain; charset=utf-8'
+      });
+      setRequestUrl(request, hintBlobUrl);
+      return true;
+    }
+    var uploadId = labels.itchUploadId;
+    if (!uploadId) {
+      return false;
+    }
     var html = await fetchPage(page, settings, fetchImpl, logger);
     var csrf = findCsrf(html);
     if (!csrf) {
@@ -1598,6 +1771,8 @@
     cleanText: cleanText,
     decodeHtml: decodeHtml,
     detectGate: detectGate,
+    externalHintFileName: externalHintFileName,
+    externalHintText: externalHintText,
     fallbackFileName: fallbackFileName,
     findCsrf: findCsrf,
     getBlobApi: getBlobApi,
@@ -1619,6 +1794,7 @@
     resolveGame: resolveGame,
     sanitizeFilename: sanitizeFilename,
     selectFiles: selectFiles,
+    utf8Bytes: utf8Bytes,
     registerHandlers: registerHandlers
   };
 

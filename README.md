@@ -123,6 +123,7 @@ https://mrdrnose.itch.io/votv
 | `platform` | string | `all` | `all`：列出全部上传；`apk`：只返回 APK；`desktop`：只返回 Windows/macOS/Linux 文件。 |
 | `preferredPlatform` | string | `auto` | 文件排序：`auto`（APK 优先，然后桌面）、`android`、`windows`、`macos`、`linux`、`none`（页面顺序）。 |
 | `includeArm32` | boolean | `false` | 仅对 `platform=apk` 生效。`platform=all` 始终列出 arm32 APK。 |
+| `externalHints` | boolean | `true` | 页面上的外部上传（MediaFire、MEGA 等）在解析窗口里各显示为一个 `.txt`，内容是该文件的链接。需要 Gopeed 2.x；关掉后只列 itch.io 托管的文件。 |
 | `cookie` | string | 空 | 可选。登录/年龄门页面需要时填写；只发送给 itch.io。 |
 | `fingerprint` | string | `chrome` | 浏览器指纹。`chrome` 最稳；`none` 使用 Gopeed 默认客户端。 |
 
@@ -200,7 +201,7 @@ unzip -t 文件名.apk
 | `该页面需要登录才能查看下载` | 在设置里填 Cookie。扩展不会绕过登录。 |
 | `该页面需要年龄确认` | 先在浏览器完成年龄确认，再用同一会话的 Cookie。 |
 | `页面没有可下载文件` | 可能尚未发布、已下架、需要购买/领取，或上传已移除。VOTV 示例页面需要先领取并填写 Cookie；未领取时出现此提示是正常的。 |
-| 页面明明有多个安装包，却只列出一个文件 | 其余上传在 itch.io 上标着 `External`：文件托管在 MediaFire、MEGA 等外部站点，itch.io 只提供跳转页。扩展只下载 itch.io 托管的文件，请在游戏页面手动打开这些外部链接。扩展会在日志里记录跳过数量，不会为它们发请求。 |
+| 页面上的安装包在列表里是 `.txt` | 那些上传在 itch.io 上标着 `External`：文件托管在 MediaFire、MEGA 等站点，itch.io 只提供跳转页。扩展为每个外部上传列出一个小 `.txt`，打开就是该文件的下载链接，安装包本体请自己在浏览器里下载。Gopeed 1.9.x 没有 blob 接口，不会生成这些提示文件。 |
 | `签名链接获取失败（HTTP 403）` | Cookie 失效/缺失，或请求被 itch.io 拒绝；重新获取 Cookie 或稍后重试。 |
 | `签名链接获取失败（HTTP 429）` | itch.io 限流；等几分钟再试。 |
 | 安装时提示“安装包损坏” | 先确认是否旧的损坏文件：重新解析并删除旧文件。2.x 上扩展会自动续传；1.9.x 上把连接数设为 **1** 后重试。 |
@@ -214,7 +215,7 @@ unzip -t 文件名.apk
 
 - 不支持付费游戏、需要购买的页面。
 - 不支持绕过登录或年龄确认；需要用户自己提供 Cookie。
-- 不支持指向外部站点的上传（页面标记 `External`，如 MediaFire、MEGA）：itch.io 只返回跳转页，没有可直接下载的文件。扩展会跳过它们，不发送签名请求；如果整页文件都是外部上传，会直接说明原因。
+- 不支持下载指向外部站点的上传（页面标记 `External`，如 MediaFire、MEGA）：itch.io 只返回跳转页。扩展不会下载它们，而是在 Gopeed 2.x 上为每个外部上传生成一个含链接的 `.txt`（设置 `externalHints`，默认开启）；关掉后这些上传完全跳过。整页都是外部上传时，2.x 只返回这些提示文件，1.9.x 会给出说明性错误。
 - 只支持 `author.itch.io` 子域名下的游戏主页。
 - 页面结构变化后可能需要更新解析逻辑。
 - 断线续传需要 Gopeed 2.x；1.9.x 仍受 60 秒签名限制。

@@ -123,6 +123,7 @@ Select what you need, then download.
 | `platform` | string | `all` | `all`: every upload; `apk`: APK only; `desktop`: Windows/macOS/Linux files only. |
 | `preferredPlatform` | string | `auto` | Sort order: `auto` (APK first, then desktop), `android`, `windows`, `macos`, `linux`, or `none` (page order). |
 | `includeArm32` | boolean | `false` | Only applies to `platform=apk`. `platform=all` always lists arm32 APKs. |
+| `externalHints` | boolean | `true` | External uploads (MediaFire, MEGA, ...) appear in the resolve dialog as one small `.txt` each, containing that file's link. Requires Gopeed 2.x; turn it off to list itch.io-hosted files only. |
 | `cookie` | string | empty | Optional. Needed for login/age-gated pages; sent only to itch.io. |
 | `fingerprint` | string | `chrome` | Browser fingerprint. `chrome` is recommended; `none` uses Gopeed's default client. |
 
@@ -200,7 +201,7 @@ Do not judge a download by its byte count of zeros: an APK can legitimately cont
 | `This page requires login` | Add a Cookie in settings. The extension does not bypass login. |
 | `This page requires age confirmation` | Confirm age in a browser, then use that session's Cookie. |
 | `No downloadable files` | The game may be unpublished, delisted, paid/claimed, or the uploads were removed. The VOTV example requires claiming the game and a Cookie first. |
-| The page lists several installers but only one file appears | The others are marked `External` on itch.io: they live on MediaFire, MEGA, and similar hosts, and itch.io only links to a landing page. The extension downloads itch.io-hosted files only, so open those external links on the game page yourself. It logs how many uploads it skipped and sends no request for them. |
+| An installer from the page shows up as a `.txt` | Those uploads are marked `External` on itch.io: the files live on MediaFire, MEGA, and similar hosts, and itch.io only links to a landing page. The extension lists one small `.txt` per external upload; open it to get that file's link and download the installer in your browser. Gopeed 1.9.x has no blob API, so no hint files are generated there. |
 | `Failed to get signed URL (HTTP 403)` | Cookie expired/missing, or itch.io rejected the request; refresh the Cookie or retry later. |
 | `Failed to get signed URL (HTTP 429)` | itch.io rate limit; wait a few minutes. |
 | Installer says "package is corrupt" | Make sure you are not reinstalling an old file: resolve again and delete the old one. On 2.x the extension resumes automatically; on 1.9.x set connections to **1** and retry. |
@@ -214,7 +215,7 @@ Logs: Gopeed's `logs/extension.log`. The extension logs only public filenames an
 
 - No paid games or pages that require purchase.
 - No bypassing login or age confirmation; the user must provide a Cookie.
-- No uploads that point to external sites (marked `External`, e.g. MediaFire or MEGA): itch.io only returns a landing page, not a file. The extension skips them without sending a signed-URL request; a page that has only external uploads fails with an explanation.
+- No downloading of uploads that point to external sites (marked `External`, e.g. MediaFire or MEGA): itch.io only returns a landing page. The extension does not download them; on Gopeed 2.x it lists a small `.txt` per external upload with the link (setting `externalHints`, on by default), and skips them entirely when that is off. A page with only external uploads returns just those hint files on 2.x, and an explanatory error on 1.9.x.
 - Only `author.itch.io` game pages.
 - Page structure changes may require a parser update.
 - Resumable downloads require Gopeed 2.x; 1.9.x is still bound by the 60-second signature.
