@@ -478,6 +478,11 @@
       if (versionTag) {
         version = cleanText(versionTag[1]);
       }
+      // itch.io marks uploads that only redirect to another host (MediaFire,
+      // MEGA, Google Drive, ...) with an "External" label and no file size.
+      // Their file endpoint returns a landing-page URL instead of a file, so
+      // they cannot be turned into a Gopeed download.
+      var external = /class\s*=\s*["'][^"']*\bexternal_label\b[^"']*["']/i.test(block);
       uploads.push({
         id: String(id),
         order: uploads.length,
@@ -485,7 +490,8 @@
         size: parseHumanSize(sizeText),
         sizeText: sizeText,
         platforms: platforms,
-        version: version
+        version: version,
+        external: external
       });
     }
     return uploads;
@@ -1004,8 +1010,17 @@
     var uploads = page.uploads.slice(0, MAX_UPLOADS);
     var preferred = [];
     var fallback = [];
+    var externalCount = 0;
+    var externalNames = [];
     for (var i = 0; i < uploads.length; i++) {
       var upload = uploads[i];
+      // External uploads resolve to a landing page on another host, never to a
+      // file: skip them before burning a request on the file endpoint.
+      if (upload.external) {
+        externalCount++;
+        externalNames.push(String(upload.name || upload.id));
+        continue;
+      }
       var isPreferred = settings.platform === 'all' ||
         (settings.platform === 'apk' && uploadMayBeApk(upload)) ||
         (settings.platform === 'desktop' && uploadMayBeDesktop(upload));
@@ -1079,9 +1094,17 @@
     }
 
     files = dedupeFiles(files);
+    if (externalCount > 0) {
+      logger.info('[itch] skipped ' + externalCount + ' external upload(s) hosted outside itch.io' +
+        (externalNames.length > 0 ? ': ' + externalNames.join(', ') : ''));
+    }
     if (files.length === 0) {
       if (lastError) {
         throwUser(lastError.message || '没有获取到可下载文件，请稍后重试。');
+      }
+      if (externalCount > 0) {
+        throwUser('没有找到 itch.io 托管的可下载文件：该页面有 ' + externalCount + ' 个上传托管在外部站点（如 MediaFire、MEGA），' +
+          'itch.io 只提供跳转页面。扩展无法直接下载这些链接；请在游戏页面手动打开，或等待作者上传 itch.io 托管的文件。');
       }
       throwUser('没有获取到可下载文件，请稍后重试。');
     }

@@ -200,6 +200,7 @@ Do not judge a download by its byte count of zeros: an APK can legitimately cont
 | `This page requires login` | Add a Cookie in settings. The extension does not bypass login. |
 | `This page requires age confirmation` | Confirm age in a browser, then use that session's Cookie. |
 | `No downloadable files` | The game may be unpublished, delisted, paid/claimed, or the uploads were removed. The VOTV example requires claiming the game and a Cookie first. |
+| The page lists several installers but only one file appears | The others are marked `External` on itch.io: they live on MediaFire, MEGA, and similar hosts, and itch.io only links to a landing page. The extension downloads itch.io-hosted files only, so open those external links on the game page yourself. It logs how many uploads it skipped and sends no request for them. |
 | `Failed to get signed URL (HTTP 403)` | Cookie expired/missing, or itch.io rejected the request; refresh the Cookie or retry later. |
 | `Failed to get signed URL (HTTP 429)` | itch.io rate limit; wait a few minutes. |
 | Installer says "package is corrupt" | Make sure you are not reinstalling an old file: resolve again and delete the old one. On 2.x the extension resumes automatically; on 1.9.x set connections to **1** and retry. |
@@ -213,7 +214,7 @@ Logs: Gopeed's `logs/extension.log`. The extension logs only public filenames an
 
 - No paid games or pages that require purchase.
 - No bypassing login or age confirmation; the user must provide a Cookie.
-- No uploads that point to external sites (`external: true`).
+- No uploads that point to external sites (marked `External`, e.g. MediaFire or MEGA): itch.io only returns a landing page, not a file. The extension skips them without sending a signed-URL request; a page that has only external uploads fails with an explanation.
 - Only `author.itch.io` game pages.
 - Page structure changes may require a parser update.
 - Resumable downloads require Gopeed 2.x; 1.9.x is still bound by the 60-second signature.

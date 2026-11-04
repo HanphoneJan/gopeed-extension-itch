@@ -5,6 +5,18 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-11-04
+
+### Changed
+
+- Uploads marked `External` on the game page are now detected from the HTML and
+  skipped before the signed-URL request. A page that mixes itch.io-hosted and
+  external uploads no longer spends one POST per external file, and a page whose
+  uploads are all external fails with an explanation instead of a generic
+  "no downloadable files" error.
+- README troubleshooting explains why a page with several installers can list a
+  single file: the others live on MediaFire, MEGA, or another host.
+
 ## [1.2.0] - 2026-11-04
 
 ### Added

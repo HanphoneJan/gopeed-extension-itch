@@ -58,6 +58,7 @@ GET https://author.itch.io/game
 POST https://author.itch.io/game/file/<upload_id>?source=view_game&as_props=1
         │  body: csrf_token=<token>
         │  headers: X-Requested-With, Accept: application/json, Referer, 可选 Cookie
+        │  带 external_label 的上传（文件在其他站点）在 POST 之前跳过
         ▼
 JSON { "url": "https://...r2.cloudflarestorage.com/...", "external": false }
         │
@@ -84,6 +85,7 @@ node --test test/index.test.js
 - HTML fixture 解析：APK / Windows / macOS / arm32、无文件、登录门、年龄门、缺 CSRF；
 - 默认列出全部文件、平台/arm32 选择、只有 arm32 + 桌面文件时回退；
 - 文件 POST 的方法、headers、form body、JSON 解析；
+- 外部上传（页面标记 `External`）在请求文件接口前跳过，不消耗签名请求；整页都是外部上传时给出明确提示；
 - 外部上传与 HTML 响应拒绝；
 - `onStart` 刷新（`req.url` 直接赋值和 `setUrl()` 两种 API）；
 - `onError` 刷新与重试上限；

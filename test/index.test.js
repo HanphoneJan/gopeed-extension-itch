@@ -532,6 +532,68 @@ test('rejects external uploads instead of downloading a landing page', async () 
   );
 });
 
+test('marks external uploads while parsing', () => {
+  const parsed = api.parsePage(fixture('external-uploads.html'), page());
+  assert.equal(parsed.uploads.length, 3);
+  assert.equal(parsed.uploads[0].external, true);
+  assert.equal(parsed.uploads[1].external, true);
+  assert.equal(parsed.uploads[2].external, false);
+});
+
+test('skips external uploads without requesting their file endpoint', async () => {
+  const html = fixture('external-uploads.html');
+  const logger = recordingLogger();
+  const calls = [];
+  async function fetchMock(url, init) {
+    const textUrl = String(url);
+    calls.push(textUrl);
+    if (textUrl === PAGE_URL) {
+      return response(html, { status: 200, headers: { 'content-type': 'text/html' } });
+    }
+    if (/\/file\/777\?/.test(textUrl)) {
+      return response(JSON.stringify({ external: false, url: 'https://r2.example.test/walkthrough' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' }
+      });
+    }
+    if (textUrl === 'https://r2.example.test/walkthrough') {
+      return response(new Uint8Array([0]), {
+        status: 206,
+        headers: {
+          'content-range': 'bytes 0-0/784384',
+          'content-disposition': 'attachment; filename="Rift Test Walkthrough mod.zip"',
+          'content-type': 'application/octet-stream'
+        }
+      });
+    }
+    throw new Error(`unexpected URL in test: ${textUrl}`);
+  }
+  const resource = await api.resolveGame(PAGE_URL, { platform: 'all' }, fetchMock, logger);
+  assert.equal(resource.files.length, 1);
+  assert.equal(resource.files[0].name, 'Rift Test Walkthrough mod.zip');
+  assert.equal(calls.some((url) => /\/file\/(555|666)\?/.test(url)), false);
+  assert.match(logger.lines.join('\n'), /skipped 2 external upload/);
+});
+
+test('explains a page whose uploads are all external', async () => {
+  const html = fixture('external-only.html');
+  const logger = recordingLogger();
+  const calls = [];
+  async function fetchMock(url) {
+    const textUrl = String(url);
+    calls.push(textUrl);
+    if (textUrl === PAGE_URL) {
+      return response(html, { status: 200, headers: { 'content-type': 'text/html' } });
+    }
+    throw new Error(`unexpected URL in test: ${textUrl}`);
+  }
+  await assert.rejects(
+    api.resolveGame(PAGE_URL, { platform: 'all' }, fetchMock, logger),
+    /托管在外部站点/
+  );
+  assert.deepEqual(calls, [PAGE_URL]);
+});
+
 test('does not silently fall back to desktop when the APK probe is rate limited', async () => {
   const html = fixture('apk-windows-mac-arm32.html');
   const logger = recordingLogger();
