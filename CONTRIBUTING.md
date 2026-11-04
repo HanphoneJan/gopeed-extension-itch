@@ -53,7 +53,7 @@ node --test test/index.test.js
 
 1. Fork 仓库并从 `main` 创建分支。
 2. 保持改动聚焦，一个 PR 解决一个问题。
-3. 更新 README/CHANGELOG（如果行为或设置变化）。
+3. 更新 README（中英）与 CHANGELOG（如果行为或设置变化），并同步 `manifest.json` 的 `version`。
 4. 在 PR 描述中说明：
    - 改了什么；
    - 如何测试；

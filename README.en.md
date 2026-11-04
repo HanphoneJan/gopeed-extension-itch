@@ -31,6 +31,7 @@
 
 - Lists **every downloadable file** on the page, with real names, sizes, and platforms.
 - Supports APK, Windows, macOS, Linux, and other files; it is not APK-only.
+- External uploads (`External`, e.g. MediaFire or MEGA) appear on Gopeed 2.x as one `.txt` hint each with the link, so they no longer look missing.
 - Optional platform sorting: APK, Windows, macOS, or Linux first.
 - Handles itch.io's temporary download URLs and refreshes them before download.
 - On Gopeed 2.x, **resumable downloads**: every Range request is re-signed, so a dropped connection continues from the last byte instead of leaving holes.
@@ -102,6 +103,7 @@ Then click resolve. Gopeed shows every downloadable file on the page:
 - Android APK
 - Windows/macOS/Linux archives or installers
 - Other files uploaded by the author
+- A `.txt` hint when the file is hosted elsewhere (open it for that file's link; see the troubleshooting table)
 
 Select what you need, then download.
 
@@ -229,6 +231,7 @@ Logs: Gopeed's `logs/extension.log`. The extension logs only public filenames an
 - Cookies are sent only to `*.itch.io` and are never logged.
 - CSRF tokens are used in memory and are not written to labels, storage, or logs.
 - Signed URLs only exist in the Gopeed download request and Gopeed's own task data; the extension does not log them.
+- A `.txt` hint for an external upload contains only that file's public landing link, no credentials.
 - No cookies, tokens, signed URLs, or downloaded game files are stored in this repository.
 - For security reports, read [SECURITY.md](SECURITY.md) and do not post credentials in public issues.
 

@@ -42,6 +42,7 @@ https://github.com/HanphoneJan/gopeed-extension-itch
 | `fetch` Cookie | v1.9.3 无 cookie jar；扩展用显式 `Cookie` 设置。`main` 有 jar，但统一使用 `credentials: 'omit'` |
 | 签名 URL | 文件接口返回的 R2 URL 约 60 秒过期（`X-Amz-Expires=60`） |
 | `gopeed.runtime.blob` | 仅 2.x 提供；`createObjectURL(opener, {size, range})` 注册本地可续传数据源，1.9.x 为 `undefined` |
+| 通知/弹窗 | 扩展 API 没有 notify/toast：`gopeed` 只有 `events`、`logger`、`settings`、`storage`、`runtime`、`host`。解析窗口只能通过 `files` 或 `res.name` 让用户看到信息，外部上传的 `.txt` 提示项就是这么做的 |
 | 2.0.0-beta.4 实测 | blob 续传可用；代理中途重置连接后，任务从断点继续，`unzip -t` 无错误，APK 安装成功 |
 
 已确认：`onStart` 可以读/改克隆出来的 `task.meta.opts`，但**真实任务的 connections 不会被改回**；因此扩展无法强制单连接，只能文档提示。
@@ -126,9 +127,12 @@ node --test test/index.test.js
 
 ## 发布
 
+1. 改动会影响行为时，同步更新 `manifest.json` 的 `version`、`CHANGELOG.md` 和 README（中英）。
+2. 打 tag 并推送（网络受限时先给 git 配好代理）：
+
 ```bash
-git tag v1.1.0
-git push origin v1.1.0
+git tag v1.2.3
+git push origin v1.2.3
 ```
 
 Gopeed 通过 git 仓库安装和更新，不需要单独构建产物。市场由 `gopeed.com` 自动索引 GitHub 仓库，通常无需单独提交；索引和 README 可能有延迟。
@@ -141,6 +145,8 @@ Gopeed 通过 git 仓库安装和更新，不需要单独构建产物。市场�
 - 1 连接：同一 APK 完整下载，`unzip -t` 通过，SHA-256 与完整文件一致。
 - 解析后等待 86 秒再创建任务：`onStart` 刷新成功并开始下载。
 - `https://mrdrnose.itch.io/votv` 是 Name your own price 页面：未领取/未提供 Cookie 时没有公开上传按钮，正确返回“页面没有可下载文件”。
+- `https://niichan029.itch.io/my-bully-is-my-lover`：7 个上传里 6 个是 `External`（MediaFire/MEGA），1.2.2 起 2.x 返回 7 项（1 个 zip + 6 个含链接的 `.txt`），链接与页面一致；关掉 `externalHints` 时只返回 1 个 zip，且不为外部上传发请求。
+- `https://bisuketdream.itch.io/darling-touch`：devlog 里的 "Supporter login required" 曾被文本门检测误判为登录页（1.2.3 修复，文本兜底现在只在没有 `data-upload_id` 时生效）；修复后返回 5 个公开文件（2 个 APK、Windows zip、mac dmg、Linux），大小来自 Content-Range。
 - Gopeed 1.9.3 的 `internal/protocol/http/fetcher.go` 在 `io.EOF` 时直接把连接标记 `Completed`，没有检查 `conn.Chunk.remain()`。代理/VPN/网络提前关闭连接时，会留下稀疏空洞但任务显示完成；1 连接无法避免。
 
 ## 安全注意
@@ -175,6 +181,7 @@ Gopeed → 本地 blob HTTP 服务 → rangeOpener({offset, end})
 - `onStart` 遇到 `itchBlob=1` 直接返回，不能把本地 URL 换成签名 URL。
 - `onError` 遇到 `itchBlob=1` 时重建数据源再 `task.continue()`，用于应用重启后会话丢失的情况。
 - 没有 blob 接口时（1.9.x）自动退回原来的签名 URL 路径，行为不变。
+- 外部上传的 `.txt` 提示项复用同一套 blob 机制：内容在内存里切片，`labels` 用 `itchHint=1` + 页面 URL + upload ID，`onStart`/`onError` 重新取链接后重建，不写入文件系统。
 
 测试：
 

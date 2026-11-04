@@ -31,6 +31,7 @@
 
 - 列出页面上的**全部可下载文件**，保留真实文件名、大小和平台。
 - 支持 APK、Windows、macOS、Linux 等文件；不会只返回 APK。
+- 页面上的外部上传（`External`，如 MediaFire、MEGA）在 Gopeed 2.x 上各显示为一个含链接的 `.txt` 提示项，不会被误当成缺失。
 - 可按平台排序：APK、Windows、macOS、Linux 优先项可选。
 - 自动处理 itch.io 的临时下载地址，并在开始下载前刷新。
 - Gopeed 2.x 上支持**断线续传**：每个 Range 请求重新签名，网络中断后从断点继续，不会留下空洞。
@@ -102,6 +103,7 @@ https://mrdrnose.itch.io/votv
 - Android APK
 - Windows/macOS/Linux 压缩包或安装包
 - 作者上传的其他文件
+- 托管在外部站点时的 `.txt` 提示项（打开即得该文件的下载链接，见下方排错表）
 
 按需要勾选文件 → 下载。
 
@@ -229,6 +231,7 @@ unzip -t 文件名.apk
 - Cookie 只在请求 `*.itch.io` 时发送；不写日志。
 - CSRF token 只在内存中用于请求；不写入标签、storage 或日志。
 - 签名 URL 只存在于返回给 Gopeed 的下载请求和 Gopeed 自己的任务数据中；扩展日志不输出。
+- 外部上传的 `.txt` 提示项里只有该文件的公开跳转链接，不包含任何凭据。
 - 不在仓库中保存 Cookie、token、签名 URL 或下载的文件。
 - 安全问题请阅读 [SECURITY.md](SECURITY.md)，不要在公开 issue 中贴凭据。
 
