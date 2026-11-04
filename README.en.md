@@ -198,7 +198,7 @@ Do not judge a download by its byte count of zeros: an APK can legitimately cont
 | Extension not found in the market | Search `itch` or `itch.io`; the market index may lag. You can also install via the Git URL above. |
 | `Not an itch.io game page URL` | Paste `https://author.itch.io/game`, not a list page or devlog page. |
 | `Missing CSRF token` | The page may need login/age confirmation; add a Cookie and retry. |
-| `This page requires login` | Add a Cookie in settings. The extension does not bypass login. |
+| `This page requires login` | Add a Cookie in settings. The extension does not bypass login. If the page downloads fine in a browser without logging in, update the extension: 1.2.3 fixed devlog text such as "login required" being read as a login gate. |
 | `This page requires age confirmation` | Confirm age in a browser, then use that session's Cookie. |
 | `No downloadable files` | The game may be unpublished, delisted, paid/claimed, or the uploads were removed. The VOTV example requires claiming the game and a Cookie first. |
 | An installer from the page shows up as a `.txt` | Those uploads are marked `External` on itch.io: the files live on MediaFire, MEGA, and similar hosts, and itch.io only links to a landing page. The extension lists one small `.txt` per external upload; open it to get that file's link and download the installer in your browser. Gopeed 1.9.x has no blob API, so no hint files are generated there. |

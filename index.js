@@ -250,11 +250,16 @@
         /class\s*=\s*["'][^"']*\blogin_page\b/i.test(html)) {
       return 'login';
     }
-    if (/(you must be logged in|log in to (?:view|download)|login (?:is )?required)/i.test(html)) {
-      return 'login';
-    }
-    if (/(not_found_page|we couldn't find your page|page not found)/i.test(html)) {
-      return 'notfound';
+    // Text-only fallbacks. A page that still lists uploads is not gated: devlog
+    // or description text such as "Supporter login required" must not count.
+    var hasUploads = /data-upload_id\s*=/i.test(html);
+    if (!hasUploads) {
+      if (/(you must be logged in|log in to (?:view|download)|login (?:is )?required)/i.test(html)) {
+        return 'login';
+      }
+      if (/(not_found_page|we couldn't find your page|page not found)/i.test(html)) {
+        return 'notfound';
+      }
     }
     if (pageName && pageName !== 'view_game' && pageName !== 'game') {
       return 'notgame';

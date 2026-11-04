@@ -106,6 +106,19 @@ test('parses title, CSRF, uploads, sizes and platforms', () => {
   assert.deepEqual(android.platforms, ['android']);
 });
 
+test('does not treat devlog wording as a login gate', () => {
+  const html = fixture('devlog-login-wording.html');
+  assert.equal(api.detectGate(html), '');
+  const parsed = api.parsePage(html, page());
+  assert.equal(parsed.uploads.length, 1);
+  assert.equal(parsed.uploads[0].id, '1001');
+});
+
+test('still detects a login page that only says it in text', () => {
+  const html = '<html><body><p>You must be logged in to view this page.</p></body></html>';
+  assert.equal(api.detectGate(html), 'login');
+});
+
 test('rejects missing CSRF token', () => {
   assert.throws(() => api.parsePage(fixture('missing-csrf.html'), page()), /CSRF/);
 });
